@@ -102,7 +102,8 @@
 enum cache_policy {
   LRU,		/* replace least recently used block (perfect LRU) */
   Random,	/* replace a random block */
-  FIFO		/* replace the oldest block in the set */
+  FIFO,		/* replace the oldest block in the set */
+  PLRU
 };
 
 /* block status values */
@@ -135,6 +136,7 @@ struct cache_blk_t
 /* cache set definition (one or more blocks sharing the same set index) */
 struct cache_set_t
 {
+  int PLRU_state;
   struct cache_blk_t **hash;	/* hash table: for fast access w/assoc, NULL
 				   for low-assoc caches */
   struct cache_blk_t *way_head;	/* head of way list */

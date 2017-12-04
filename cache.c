@@ -368,7 +368,7 @@ cache_create(char *name,		/* name of the cache */
 	 otherwise, block accesses through SET->BLKS will fail (used
 	 during random replacement selection) */
       cp->sets[i].blks = CACHE_BINDEX(cp, cp->data, bindex);
-      
+      cp->sets[i].PLRU_state = 0
       /* link the data blocks into ordered way chain and hash table bucket
          chains, if hash table exists */
       for (j=0; j<assoc; j++)
@@ -408,6 +408,7 @@ cache_char2policy(char c)		/* replacement policy as a char */
   switch (c) {
   case 'l': return LRU;
   case 'r': return Random;
+  case 'p': return PLRU;
   case 'f': return FIFO;
   default: fatal("bogus replacement policy, `%c'", c);
   }
@@ -426,6 +427,7 @@ cache_config(struct cache_t *cp,	/* cache instance */
 	  cp->name, cp->assoc,
 	  cp->policy == LRU ? "LRU"
 	  : cp->policy == Random ? "Random"
+    : cp->policy == PLRU ? "PLRU"
 	  : cp->policy == FIFO ? "FIFO"
 	  : (abort(), ""));
 }
@@ -489,6 +491,29 @@ cache_stats(struct cache_t *cp,		/* cache instance */
 	  cp->name,
 	  (double)cp->misses/sum, (double)(double)cp->replacements/sum,
 	  (double)cp->invalidations/sum);
+}
+
+int get_PLRU_bindex ( int assoc, int PLRU_state ) {
+  int bindex;
+  int width_bindex = get_bindex_width(assoc);
+  int i = 0;
+  int j = 0;
+  bindex = 0;
+  for (j = 0; j < width_bindex; j++)
+  {
+    int bit = (PLRU_state >> i) & 0x1;  
+    if (bit == 1)
+    {
+      i = i*2 + 2;
+    }
+    else if (bit == 0)
+    {
+      i = i*2 + 1;
+    }
+    bit = bit ^ 0x1;
+    bindex = (bindex << 1) | bit;
+  }
+  return bindex;
 }
 
 /* access a cache, perform a CMD operation on cache CP at address ADDR,
@@ -581,6 +606,10 @@ cache_access(struct cache_t *cp,	/* cache to access */
       repl = CACHE_BINDEX(cp, cp->sets[set].blks, bindex);
     }
     break;
+  case PLRU:
+    int orig_PLRU_state = cp->sets[set].PLRU_state;
+    int bindex = get_PLRU_bindex(cp->assoc, orig_PLRU_state);
+    repl = CACHE_BINDEX(cp, cp->sets[set].blks, bindex);
   default:
     panic("bogus replacement policy");
   }
@@ -704,6 +733,10 @@ cache_access(struct cache_t *cp,	/* cache to access */
     blk->status |= CACHE_BLK_DIRTY;
 
   /* this block hit last, no change in the way list */
+  if (cp->policy == PLRU)
+  {
+      cp->sets[set].PLRU_state = 1
+  }
 
   /* tag is unchanged, so hash links (if they exist) are still valid */
 
