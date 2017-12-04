@@ -493,6 +493,17 @@ cache_stats(struct cache_t *cp,		/* cache instance */
 	  (double)cp->invalidations/sum);
 }
 
+int get_bindex_width ( int assoc ) 
+{
+  int width_bindex = 0;
+  for (width_bindex = 0; ; width_bindex++)
+  {
+    if ((assoc >> width_bindex) == 1)
+      break;
+  }
+  return width_bindex;
+}
+
 int get_PLRU_bindex ( int assoc, int PLRU_state ) {
   int bindex;
   int width_bindex = get_bindex_width(assoc);
