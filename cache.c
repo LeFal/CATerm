@@ -368,7 +368,7 @@ cache_create(char *name,		/* name of the cache */
 	 otherwise, block accesses through SET->BLKS will fail (used
 	 during random replacement selection) */
       cp->sets[i].blks = CACHE_BINDEX(cp, cp->data, bindex);
-      cp->sets[i].PLRU_state = 0
+      cp->sets[i].PLRU_state = 0;
       /* link the data blocks into ordered way chain and hash table bucket
          chains, if hash table exists */
       for (j=0; j<assoc; j++)
@@ -493,6 +493,20 @@ cache_stats(struct cache_t *cp,		/* cache instance */
 	  (double)cp->invalidations/sum);
 }
 
+
+int
+get_bindex_width ( int assoc ) /* associativity of cache */
+{
+        /* width_bindex = log2(assoc) */
+        int width_bindex = 0;
+        for (width_bindex = 0; ; width_bindex++)
+        {
+                if ((assoc >> width_bindex) == 1)
+                        break;
+        }
+        return width_bindex;
+} 
+
 int get_PLRU_bindex ( int assoc, int PLRU_state ) {
   int bindex;
   int width_bindex = get_bindex_width(assoc);
@@ -607,9 +621,12 @@ cache_access(struct cache_t *cp,	/* cache to access */
     }
     break;
   case PLRU:
+   {
     int orig_PLRU_state = cp->sets[set].PLRU_state;
     int bindex = get_PLRU_bindex(cp->assoc, orig_PLRU_state);
     repl = CACHE_BINDEX(cp, cp->sets[set].blks, bindex);
+  } 
+   break;
   default:
     panic("bogus replacement policy");
   }
@@ -735,7 +752,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
   /* this block hit last, no change in the way list */
   if (cp->policy == PLRU)
   {
-      cp->sets[set].PLRU_state = 1
+      cp->sets[set].PLRU_state = 1;
   }
 
   /* tag is unchanged, so hash links (if they exist) are still valid */
