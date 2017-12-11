@@ -2,20 +2,20 @@
 
 /* SimpleScalar(TM) Tool Suite
  * Copyright (C) 1994-2003 by Todd M. Austin, Ph.D. and SimpleScalar, LLC.
- * All Rights Reserved. 
- * 
+ * All Rights Reserved.
+ *
  * THIS IS A LEGAL DOCUMENT, BY USING SIMPLESCALAR,
  * YOU ARE AGREEING TO THESE TERMS AND CONDITIONS.
- * 
+ *
  * No portion of this work may be used by any commercial entity, or for any
  * commercial purpose, without the prior, written permission of SimpleScalar,
  * LLC (info@simplescalar.com). Nonprofit and noncommercial use is permitted
  * as described below.
- * 
+ *
  * 1. SimpleScalar is provided AS IS, with no warranty of any kind, express
  * or implied. The user of the program accepts full responsibility for the
  * application of the program and the use of any results.
- * 
+ *
  * 2. Nonprofit and noncommercial use is encouraged. SimpleScalar may be
  * downloaded, compiled, executed, copied, and modified solely for nonprofit,
  * educational, noncommercial research, and noncommercial scholarship
@@ -24,13 +24,13 @@
  * solely for nonprofit, educational, noncommercial research, and
  * noncommercial scholarship purposes provided that this notice in its
  * entirety accompanies all copies.
- * 
+ *
  * 3. ALL COMMERCIAL USE, AND ALL USE BY FOR PROFIT ENTITIES, IS EXPRESSLY
  * PROHIBITED WITHOUT A LICENSE FROM SIMPLESCALAR, LLC (info@simplescalar.com).
- * 
+ *
  * 4. No nonprofit user may place any restrictions on the use of this software,
  * including as modified by the user, by any other authorized user.
- * 
+ *
  * 5. Noncommercial and nonprofit users may distribute copies of SimpleScalar
  * in compiled or executable form as set forth in Section 2, provided that
  * either: (A) it is accompanied by the corresponding machine-readable source
@@ -40,11 +40,11 @@
  * must permit verbatim duplication by anyone, or (C) it is distributed by
  * someone who received only the executable form, and is accompanied by a
  * copy of the written offer of source code.
- * 
+ *
  * 6. SimpleScalar was developed by Todd M. Austin, Ph.D. The tool suite is
  * currently maintained by SimpleScalar LLC (info@simplescalar.com). US Mail:
  * 2395 Timbercrest Court, Ann Arbor, MI 48105.
- * 
+ *
  * Copyright (C) 1994-2003 by Todd M. Austin, Ph.D. and SimpleScalar, LLC.
  */
 
@@ -368,7 +368,7 @@ cache_create(char *name,		/* name of the cache */
 	 otherwise, block accesses through SET->BLKS will fail (used
 	 during random replacement selection) */
       cp->sets[i].blks = CACHE_BINDEX(cp, cp->data, bindex);
-      cp->sets[i].PLRU_state = 0
+
       /* link the data blocks into ordered way chain and hash table bucket
          chains, if hash table exists */
       for (j=0; j<assoc; j++)
@@ -380,7 +380,12 @@ cache_create(char *name,		/* name of the cache */
 	  /* invalidate new cache block */
 	  blk->status = 0;
 	  blk->tag = 0;
-	  blk->ready = 0;
+
+    // added by OHJ 20171211
+    blk->reference_count = 0;
+    // done
+
+    blk->ready = 0;
 	  blk->user_data = (usize != 0
 			    ? (byte_t *)calloc(usize, sizeof(byte_t)) : NULL);
 
@@ -408,7 +413,6 @@ cache_char2policy(char c)		/* replacement policy as a char */
   switch (c) {
   case 'l': return LRU;
   case 'r': return Random;
-  case 'p': return PLRU;
   case 'f': return FIFO;
   default: fatal("bogus replacement policy, `%c'", c);
   }
@@ -427,7 +431,6 @@ cache_config(struct cache_t *cp,	/* cache instance */
 	  cp->name, cp->assoc,
 	  cp->policy == LRU ? "LRU"
 	  : cp->policy == Random ? "Random"
-    : cp->policy == PLRU ? "PLRU"
 	  : cp->policy == FIFO ? "FIFO"
 	  : (abort(), ""));
 }
@@ -493,40 +496,6 @@ cache_stats(struct cache_t *cp,		/* cache instance */
 	  (double)cp->invalidations/sum);
 }
 
-int get_bindex_width ( int assoc ) 
-{
-  int width_bindex = 0;
-  for (width_bindex = 0; ; width_bindex++)
-  {
-    if ((assoc >> width_bindex) == 1)
-      break;
-  }
-  return width_bindex;
-}
-
-int get_PLRU_bindex ( int assoc, int PLRU_state ) {
-  int bindex;
-  int width_bindex = get_bindex_width(assoc);
-  int i = 0;
-  int j = 0;
-  bindex = 0;
-  for (j = 0; j < width_bindex; j++)
-  {
-    int bit = (PLRU_state >> i) & 0x1;  
-    if (bit == 1)
-    {
-      i = i*2 + 2;
-    }
-    else if (bit == 0)
-    {
-      i = i*2 + 1;
-    }
-    bit = bit ^ 0x1;
-    bindex = (bindex << 1) | bit;
-  }
-  return bindex;
-}
-
 /* access a cache, perform a CMD operation on cache CP at address ADDR,
    places NBYTES of data at *P, returns latency of operation if initiated
    at NOW, places pointer to block user data in *UDATA, *P is untouched if
@@ -572,7 +541,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
       blk = cp->last_blk;
       goto cache_fast_hit;
     }
-    
+
   if (cp->hsize)
     {
       /* higly-associativity cache, access through the per-set hash tables */
@@ -617,10 +586,6 @@ cache_access(struct cache_t *cp,	/* cache to access */
       repl = CACHE_BINDEX(cp, cp->sets[set].blks, bindex);
     }
     break;
-  case PLRU:
-    int orig_PLRU_state = cp->sets[set].PLRU_state;
-    int bindex = get_PLRU_bindex(cp->assoc, orig_PLRU_state);
-    repl = CACHE_BINDEX(cp, cp->sets[set].blks, bindex);
   default:
     panic("bogus replacement policy");
   }
@@ -640,13 +605,13 @@ cache_access(struct cache_t *cp,	/* cache to access */
 
       if (repl_addr)
 	*repl_addr = CACHE_MK_BADDR(cp, repl->tag, set);
- 
+
       /* don't replace the block until outstanding misses are satisfied */
       lat += BOUND_POS(repl->ready - now);
- 
+
       /* stall until the bus to next level of memory is available */
       lat += BOUND_POS(cp->bus_free - (now + lat));
- 
+
       /* track bus resource usage */
       cp->bus_free = MAX(cp->bus_free, (now + lat)) + 1;
 
@@ -694,7 +659,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
 
 
  cache_hit: /* slow hit handler */
-  
+
   /* **HIT** */
   cp->hits++;
 
@@ -711,8 +676,16 @@ cache_access(struct cache_t *cp,	/* cache to access */
   /* if LRU replacement and this is not the first element of list, reorder */
   if (blk->way_prev && cp->policy == LRU)
     {
-      /* move this block to head of the way (MRU) list */
-      update_way_list(&cp->sets[set], blk, Head);
+      // added by OHJ
+      if (blk->reference_count > 3) {
+        /* move this block to head of the way (MRU) list */
+          update_way_list(&cp->sets[set], blk, Head);
+          blk->reference_count = 0;
+      } else {
+        blk->reference_count++;
+      }
+      // done
+
     }
 
   /* tag is unchanged, so hash links (if they exist) are still valid */
@@ -729,7 +702,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
   return (int) MAX(cp->hit_latency, (blk->ready - now));
 
  cache_fast_hit: /* fast hit handler */
-  
+
   /* **FAST HIT** */
   cp->hits++;
 
@@ -744,10 +717,6 @@ cache_access(struct cache_t *cp,	/* cache to access */
     blk->status |= CACHE_BLK_DIRTY;
 
   /* this block hit last, no change in the way list */
-  if (cp->policy == PLRU)
-  {
-      cp->sets[set].PLRU_state = 1
-  }
 
   /* tag is unchanged, so hash links (if they exist) are still valid */
 
@@ -780,11 +749,11 @@ cache_probe(struct cache_t *cp,		/* cache instance to probe */
   {
     /* higly-associativity cache, access through the per-set hash tables */
     int hindex = CACHE_HASH(cp, tag);
-    
+
     for (blk=cp->sets[set].hash[hindex];
 	 blk;
 	 blk=blk->hash_next)
-    {	
+    {
       if (blk->tag == tag && (blk->status & CACHE_BLK_VALID))
 	  return TRUE;
     }
@@ -800,7 +769,7 @@ cache_probe(struct cache_t *cp,		/* cache instance to probe */
 	  return TRUE;
     }
   }
-  
+
   /* cache block not found */
   return FALSE;
 }
