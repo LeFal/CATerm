@@ -381,7 +381,7 @@ cache_create(char *name,		/* name of the cache */
 	  blk->status = 0;
 	  blk->tag = 0;
 
-    // added by OHJ 20171211
+    // added by HJS 20171211
     blk->reference_count = 0;
     // done
 
@@ -677,15 +677,14 @@ cache_access(struct cache_t *cp,	/* cache to access */
   if (blk->way_prev && cp->policy == LRU)
     {
       // added by OHJ
-      if (blk->reference_count > 3) {
+      if (blk->reference_count > 10000) {
         /* move this block to head of the way (MRU) list */
-          update_way_list(&cp->sets[set], blk, Head);
-          blk->reference_count = 0;
+	   update_way_list(&cp->sets[set], blk, Head);
+          //blk->reference_count = 0;
       } else {
         blk->reference_count++;
       }
       // done
-
     }
 
   /* tag is unchanged, so hash links (if they exist) are still valid */
